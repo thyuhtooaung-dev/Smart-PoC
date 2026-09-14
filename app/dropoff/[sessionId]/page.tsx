@@ -16,7 +16,7 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useKioskSocket } from "@/app/hooks/useKioskSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,43 @@ export default function DropoffPage({ params }: PageProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [copiedSession, setCopiedSession] = useState(false);
+
+  // Dynamic weight stability tracker
+  const [isWeightChanging, setIsWeightChanging] = useState(false);
+  const prevWeightRef = useRef(weightData.weight);
+  const settleTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    // If weight value fluctuates, immediately switch back to Measuring state
+    if (Math.abs(weightData.weight - prevWeightRef.current) >= 0.01) {
+      setIsWeightChanging(true);
+      prevWeightRef.current = weightData.weight;
+
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+      }
+
+      // 800ms of stable reading before showing Stabilized
+      settleTimerRef.current = setTimeout(() => {
+        setIsWeightChanging(false);
+      }, 800);
+    } else if (!weightData.isStable) {
+      setIsWeightChanging(true);
+    } else {
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+      }
+      setIsWeightChanging(false);
+    }
+
+    return () => {
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+      }
+    };
+  }, [weightData.weight, weightData.isStable]);
+
+  const isStabilized = weightData.isStable && !isWeightChanging;
 
   // Handle typing and trigger sliding TTL heartbeat
   const handleChange = (
@@ -207,7 +244,7 @@ export default function DropoffPage({ params }: PageProps) {
                   </span>
                 </div>
 
-                {weightData.isStable ? (
+                {isStabilized ? (
                   <Badge
                     variant="outline"
                     className="bg-palette-primary/20 text-palette-dark border-palette-primary/60 font-semibold text-xs px-2.5 py-0.5"
@@ -237,9 +274,9 @@ export default function DropoffPage({ params }: PageProps) {
 
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">
-                  {weightData.isStable
+                  {isStabilized
                     ? "Weight confirmed. Ready for parcel transmission."
-                    : "Place parcel on the kiosk scale plate to measure."}
+                    : "Measuring scale weight... Please keep parcel steady."}
                 </p>
               </div>
             </div>

@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:8080";
+const getBackendUrl = () => {
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+  if (typeof window !== "undefined" && window.location.hostname) {
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    return `${protocol}//${window.location.hostname}:8080`;
+  }
+  return "http://localhost:8080";
+};
 
 interface WeightData {
   weight: number;
@@ -23,13 +32,23 @@ export const useKioskSocket = (sessionId: string) => {
   useEffect(() => {
     if (!sessionId) return;
 
-    // initiallize socket connection
-    const socket = io(BACKEND_URL);
+    const backendUrl = getBackendUrl();
+    const socket = io(backendUrl, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 5,
+    });
     socketRef.current = socket;
 
     socket.on("connect", () => {
+      setError(null);
       // pair with kiosk session upon connection
       socket.emit("web:join-session", { sessionId });
+    });
+
+    socket.on("connect_error", (_err) => {
+      setError(
+        `Cannot connect to backend (${backendUrl}). Ensure port 8080 is reachable.`,
+      );
     });
 
     // listen for successful pairing
